@@ -10,14 +10,14 @@ def extract_solution(solution_str):
     matches = list(match)
     if matches:
         matches = matches[-1]
-        final_answer = (int(match.group(1)), int(match.group(2)), int(match.group(3)), int(match.group(4)))
+        final_answer = (match.group(1), match.group(2), match.group(3), match.group(4))
     else:
         final_answer = None
 
     return final_answer
 
 def validate_equation(equation, ground_encryption):
-    if (equation[0] + equation[1] + equation[2] != equation[3]):
+    if (int(equation[0]) + int(equation[1]) + int(equation[2]) != int(equation[3])):
         return False
 
     sol_map = torch.zeros(26)
