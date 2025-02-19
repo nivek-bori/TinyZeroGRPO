@@ -19,44 +19,49 @@ def extract_solution(solution_str):
 
     return final_answer
 
-def make_prefix(dp):
-    equation = dp['equation']
-
-    question = "A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer." + "User: Cryptarithms are puzzles in which the digits of a mathematical equation—often a simple addition problem—are replaced by letters or symbols. Each letter uniquely represents a single digit, and the challenge is to determine the correct digit for each letter so that the arithmetic operation is valid." + equation + ". Please solve this Cryptarithm.Show your work in <think> </think> tags. And return the final answer in <answer> </answer> tags, for example <answer> 1948 + 3756 + 9574 = 15279 </answer>. " + "Assistant: Let me solve this step by step. <think>"
+def make_prefix(equation):
+    question = f"""A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer. User: Cryptarithms are puzzles in which the digits of a mathematical equation—often a simple addition problem—are replaced by letters or symbols. Each letter uniquely represents a single digit, and the challenge is to determine the correct digit for each letter so that the arithmetic operation is valid. Please solve this Cryptarithm. {equation[0]} + {equation[1]} + {equation[2]} = {equation[3]}. Show your work in <think> </think> tags. And return the final answer in <answer> </answer> tags, for example <answer> 1948 + 3756 + 9574 = 15279 </answer>. Assistant: Let me solve this step by step. <think>"""
 
     return question
 
 if __name__ == '__main__':
     # TODO: Edit code
     parser = argparse.ArgumentParser()
-    parser.add_argument('--local_dir', default='/opt/tiger/gsm8k')
-    parser.add_argument('--hdfs_dir', default=None)
+    parser.add_argument('--local_dir', default='/opt/tiger/gsm8k') # TODO: Understand what this is
+    parser.add_argument('--hdfs_dir', default=None) # TODO: Understand what this is
+    parser.add_arguement('--train_size', default=80000)
+    parser.add_argument('--test_size', default=20000)
 
     args = parser.parse_args()
 
-    dataset = datasets.load_json(data_source, 'main') # TODO: Give file path
+    dataset = datasets.load_json() # TODO: Give file path
+    TRAIN_SIZE = args.train_size
+    TEST_SIZE = args.test_size
 
     train_dataset = dataset['train']
     test_dataset = dataset['test']
+
+    assert len(dataset) > TRAIN_SIZE + TEST_SIZE
+    train_dataset = dataset.select(range(TRAIN_SIZE))
+    test_dataset = dataset.select(range(TRAIN_SIZE, TRAIN_SIZE + TEST_SIZE))
 
     # TODO: Edit code
 
     def make_map_fn(split):
         def process_fn(example, idx):
-            question = make_prefix(example, template_type=args.template_type)
+            question = make_prefix(example['equation'])
             solution = {
-                "target": example['target'],
-                "numbers": example['nums']
+                "equation": example['equation']
             }
+
             data = {
-                "data_source": data_source,
+                "data_source": "cryptarithm",
                 "prompt": [{
                     "role": "user",
                     "content": question,
                 }],
                 "ability": "math",
                 "reward_model": {
-                    "style": "rule",
                     "ground_truth": solution
                 },
                 "extra_info": {

@@ -10,31 +10,27 @@ def extract_solution(solution_str):
     matches = list(match)
     if matches:
         matches = matches[-1]
-        final_answer = (match.group(1), match.group(2), match.group(3), match.group(4))
+        return (match.group(1), match.group(2), match.group(3), match.group(4))
     else:
-        final_answer = None
-
-    return final_answer
+        return None
 
 def validate_equation(equation, ground_encryption):
-    if (int(equation[0]) + int(equation[1]) + int(equation[2]) != int(equation[3])):
+    if sum(map(int, equation[:3])) != int(equation[3]):
         return False
 
-    sol_map = torch.zeros(26)
+    sol_map = torch.zeros(26, dtype=torch.int)
 
-    for i, num in enumerate(equation):
-        encrypt_num = ground_encryption[i]
-
-        if (len(num) != len(encrypt_num[i])):
+    for num, enc_num in zip(equation, ground_encryption):
+        if len(num) != len(enc_num):
             return False
-        
-        for j, digit in enumerate(num):
-            encrypt_digit = encrypt_num[j]
 
-            if (sol_map[encrypt_digit] == 0):
-                sol_map[encrypt_digit] = digit
-            elif (sol_map[encrypt_digit] != digit):
+        for digit_char, enc_digit in zip(num, enc_num):
+            digit_val = int(digit_char)
+            if sol_map[enc_digit] == 0:
+                sol_map[enc_digit] = digit_val
+            elif sol_map[enc_digit] != digit_val:
                 return False
+
     return True
 
 def compute_score(solution_str, ground_truth, format_score=0.1, score=1.0):
