@@ -27,7 +27,7 @@ def make_prefix(equation):
 if __name__ == '__main__':
     # TODO: Edit code
     parser = argparse.ArgumentParser()
-    parser.add_argument('--local_dir', default='/opt/tiger/gsm8k') # TODO: Understand what this is
+    parser.add_argument('--local_dir', default='~/data/cryptarithm')
     parser.add_argument('--hdfs_dir', default=None) # TODO: Understand what this is
     parser.add_arguement('--train_size', default=80000)
     parser.add_argument('--test_size', default=20000)
