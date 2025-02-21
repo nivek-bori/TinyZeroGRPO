@@ -28,13 +28,13 @@ if __name__ == '__main__':
     # TODO: Edit code
     parser = argparse.ArgumentParser()
     parser.add_argument('--local_dir', default='~/data/cryptarithm')
-    parser.add_argument('--hdfs_dir', default=None) # TODO: Understand what this is
+    parser.add_argument('--hdfs_dir', default=None) # We do not use this
     parser.add_arguement('--train_size', default=80000)
     parser.add_argument('--test_size', default=20000)
 
     args = parser.parse_args()
 
-    dataset = datasets.load_json() # TODO: Give file path
+    dataset = datasets.load_dataset("json", data_files="crypt_data.jsonl", split="train")
     TRAIN_SIZE = args.train_size
     TEST_SIZE = args.test_size
 
@@ -50,9 +50,6 @@ if __name__ == '__main__':
     def make_map_fn(split):
         def process_fn(example, idx):
             question = make_prefix(example['equation'])
-            solution = {
-                "equation": example['equation']
-            }
 
             data = {
                 "data_source": "cryptarithm",
@@ -62,10 +59,11 @@ if __name__ == '__main__':
                 }],
                 "ability": "math",
                 "reward_model": {
-                    "ground_truth": solution
+                    "equation": example['equation'],
+                    "num_solutions": example['num_solutions']
                 },
                 "extra_info": {
-                    'split': split,
+                    'split': split, # Train or test
                     'index': idx,
                 }
             }

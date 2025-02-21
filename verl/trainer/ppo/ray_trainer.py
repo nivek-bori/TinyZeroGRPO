@@ -322,6 +322,7 @@ class RayPPOTrainer(object):
         self.use_reference_policy = Role.RefPolicy in role_worker_mapping
         self.use_rm = Role.RewardModel in role_worker_mapping
         self.ray_worker_group_cls = ray_worker_group_cls
+        assert self.use_rm is False, f"""GRPO doesn't use a rewrad model""" # SELF ASSERTION
 
         # define KL control
         if self.use_reference_policy:
@@ -467,6 +468,7 @@ class RayPPOTrainer(object):
             self.use_critic = False
         else:
             raise NotImplementedError
+        assert self.use_critic == False, f'We are only using GRPO' # SELF ASSERTION
 
         # create reference policy if needed
         if self.use_reference_policy:
