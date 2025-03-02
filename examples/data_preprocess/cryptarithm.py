@@ -25,7 +25,6 @@ def make_prefix(equation):
     return question
 
 if __name__ == '__main__':
-    # TODO: Edit code
     parser = argparse.ArgumentParser()
     parser.add_argument('--local_dir', default='~/data/cryptarithm')
     parser.add_argument('--hdfs_dir', default=None) # We do not use this
@@ -34,18 +33,16 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    dataset = datasets.load_dataset("json", data_files="crypt_data.jsonl", split="train")
+    full_train_dataset = datasets.load_dataset("json", data_files="train_crypt.jsonl")
+    full_test_dataset = datasets.load_dataset("json", data_files="test_crypt.jsonl")
     TRAIN_SIZE = args.train_size
     TEST_SIZE = args.test_size
 
-    train_dataset = dataset['train']
-    test_dataset = dataset['test']
+    assert len(full_train_dataset) > TRAIN_SIZE
+    assert len(full_test_dataset) > TEST_SIZE
 
-    assert len(dataset) > TRAIN_SIZE + TEST_SIZE
-    train_dataset = dataset.select(range(TRAIN_SIZE))
-    test_dataset = dataset.select(range(TRAIN_SIZE, TRAIN_SIZE + TEST_SIZE))
-
-    # TODO: Edit code
+    train_dataset = full_train_dataset.select(range(TRAIN_SIZE))
+    test_dataset = full_test_dataset.select(range(TEST_SIZE))
 
     def make_map_fn(split):
         def process_fn(example, idx):
