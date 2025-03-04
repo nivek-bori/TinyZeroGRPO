@@ -3,14 +3,12 @@ import random
 import torch
 
 def extract_solution(solution_str):
-    # Countdown.py removes string before "Assistant: "
     solution_str = solution_str.split("Assistant:", 1)[1]
 
-    answer_pattern = r'<answers>\s*(\d+)\s*\+\s*(\d+)\s*\+\s*(\d+)\s*=\s*(\d+)\s*</answers>'
-    match = re.finditer(answer_pattern, solution_str)
-    matches = list(match)
+    answer_pattern = r'<answer>\s*(\d+)\s*\+\s*(\d+)\s*\+\s*(\d+)\s*=\s*(\d+)\s*</answer>'
+    matches = list(re.finditer(answer_pattern, solution_str))
     if matches:
-        matches = matches[-1]
+        match = matches[-1]
         return (match.group(1), match.group(2), match.group(3), match.group(4))
     else:
         return None

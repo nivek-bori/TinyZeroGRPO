@@ -26,15 +26,14 @@ def make_prefix(equation):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--local_dir', default='~/data/cryptarithm')
-    parser.add_argument('--hdfs_dir', default=None) # We do not use this
-    parser.add_arguement('--train_size', default=80000)
-    parser.add_argument('--test_size', default=20000)
+    parser.add_argument('--local_dir', default='data/cryptarithm')
+    parser.add_argument('--train_size', default=70000)
+    parser.add_argument('--test_size', default=15000)
 
     args = parser.parse_args()
 
-    full_train_dataset = datasets.load_dataset("json", data_files="train_crypt.jsonl")
-    full_test_dataset = datasets.load_dataset("json", data_files="test_crypt.jsonl")
+    full_train_dataset = datasets.load_dataset("json", data_files="data/cryptarithm/train.jsonl", split='train', field=None)
+    full_test_dataset = datasets.load_dataset("json", data_files="data/cryptarithm/test.jsonl", split='train', field=None)
     TRAIN_SIZE = args.train_size
     TEST_SIZE = args.test_size
 
@@ -71,11 +70,6 @@ if __name__ == '__main__':
     test_dataset = test_dataset.map(function=make_map_fn('test'), with_indices=True)
 
     local_dir = args.local_dir
-    hdfs_dir = args.hdfs_dir
 
     train_dataset.to_parquet(os.path.join(local_dir, 'train.parquet'))
     test_dataset.to_parquet(os.path.join(local_dir, 'test.parquet'))
-
-    makedirs(hdfs_dir)
-
-    copy(src=local_dir, dst=hdfs_dir)
