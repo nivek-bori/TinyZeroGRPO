@@ -13,22 +13,24 @@ def extract_solution(solution_str):
     matches = list(match)
     if matches:
         matches = matches[-1]
-        final_answer = (int(match.group(1)), int(match.group(2)), int(match.group(3)), int(match.group(4)))
+        final_answer = (match.group(1), match.group(2),
+                        match.group(3), match.group(4))
     else:
         final_answer = None
 
     return final_answer
 
+
 def make_prefix(equation):
-    question = f"""A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer. User: Cryptarithms are puzzles in which the digits of a mathematical equation—often a simple addition problem—are replaced by letters or symbols. Each letter uniquely represents a single digit, and the challenge is to determine the correct digit for each letter so that the arithmetic operation is valid. Please solve this Cryptarithm. {equation[0]} + {equation[1]} + {equation[2]} = {equation[3]}. Show your work in <think> </think> tags. And return the final answer in <answer> </answer> tags, for example <answer> 1948 + 3756 + 9574 = 15279 </answer>. Assistant: Let me solve this step by step. <think>"""
+    question = f"""A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer. User: Cryptarithms are puzzles in which the digits of a mathematical equation—often a simple addition problem—are replaced by letters or symbols. Each letter uniquely represents a single digit, and the challenge is to determine the correct digit for each letter so that the arithmetic operation is valid. Please solve this Cryptarithm. {equation[0]} + {equation[1]} + {equation[2]} = {equation[3]}. Show your work in <think> </think> tags. And return the decrypted equation's numbers in <answer> </answer> tags, for example <answer> 1948 + 3756 + 9574 = 15278 </answer>. Assistant: Let me solve this step by step. <think> """
 
     return question
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--local_dir', default='data/cryptarithm')
-    parser.add_argument('--train_size', default=70000)
-    parser.add_argument('--test_size', default=15000)
+    parser.add_argument('--train_size', default=80000)
+    parser.add_argument('--test_size', default=20000)
 
     args = parser.parse_args()
 
@@ -37,15 +39,15 @@ if __name__ == '__main__':
     TRAIN_SIZE = args.train_size
     TEST_SIZE = args.test_size
 
-    assert len(full_train_dataset) > TRAIN_SIZE
-    assert len(full_test_dataset) > TEST_SIZE
+    assert len(full_train_dataset) >= TRAIN_SIZE
+    assert len(full_test_dataset) >= TEST_SIZE
 
     train_dataset = full_train_dataset.select(range(TRAIN_SIZE))
     test_dataset = full_test_dataset.select(range(TEST_SIZE))
 
     def make_map_fn(split):
         def process_fn(example, idx):
-            question = make_prefix(example['equation'])
+            question = make_prefix(example['encrypted_equation'])
 
             data = {
                 "data_source": "cryptarithm",
@@ -55,7 +57,8 @@ if __name__ == '__main__':
                 }],
                 "ability": "math",
                 "reward_model": {
-                    "equation": example['equation'],
+                    "encrypted_equation_str": example['encrypted_equation_str'],
+                    "encrypted_equation": example['encrypted_equation'],
                     "num_solutions": example['num_solutions']
                 },
                 "extra_info": {
