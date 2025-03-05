@@ -17,22 +17,21 @@ Note that we don't combine the main with ray_trainer as ray_trainer is used by o
 
 from verl import DataProto
 import torch
-from verl.utils.reward_score import gsm8k, math, multiply, countdown
+from verl.utils.reward_score import gsm8k, multiply, countdown, cryptarithm
 from verl.trainer.ppo.ray_trainer import RayPPOTrainer
 
 
 def _select_rm_score_fn(data_source):
-    if data_source == 'openai/gsm8k':
+    if data_source == 'cryptarithm':
+        return cryptarithm.compute_score
+    elif data_source == 'openai/gsm8k':
         return gsm8k.compute_score
-    elif data_source == 'lighteval/MATH':
-        return math.compute_score
     elif "multiply" in data_source or "arithmetic" in data_source:
         return multiply.compute_score
     elif "countdown" in data_source:
         return countdown.compute_score
     else:
         raise NotImplementedError
-
 
 class RewardManager():
     """The reward manager.
@@ -71,7 +70,7 @@ class RewardManager():
             sequences = torch.cat((valid_prompt_ids, valid_response_ids))
             sequences_str = self.tokenizer.decode(sequences)
 
-            ground_truth = data_item.non_tensor_batch['reward_model']['ground_truth']
+            ground_truth = data_item.non_tensor_batch['reward_model']['encrypted_equation']
 
             # select rm_score
             data_source = data_item.non_tensor_batch['data_source']

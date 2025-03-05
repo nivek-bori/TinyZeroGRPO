@@ -56,8 +56,8 @@ if __name__ == '__main__':
                 }],
                 "ability": "math",
                 "reward_model": {
-                    "encrypted_equation_str": example['encrypted_equation_str'],
-                    "encrypted_equation": example['encrypted_equation'],
+                    "encrypted_equation_str": example['encrypted_equation_str'], # For model string
+                    "encrypted_equation": example['encrypted_equation'], # For reward model string array
                     "num_solutions": example['num_solutions']
                 },
                 "extra_info": {
