@@ -97,7 +97,13 @@ import hydra
 def main(config):
     if not ray.is_initialized():
         # this is for local ray cluster
-        ray.init(runtime_env={'env_vars': {'TOKENIZERS_PARALLELISM': 'true', 'NCCL_DEBUG': 'WARN'}})
+        ray.init(runtime_env={
+            'env_vars': {
+                'TOKENIZERS_PARALLELISM': 'true', 
+                'NCCL_DEBUG': 'WARN',
+                'WORLD_SIZE': str(config.trainer.n_gpus_per_node * config.trainer.nnodes),
+            }
+        })
 
     ray.get(main_task.remote(config))
 
@@ -143,28 +149,25 @@ def main_task(config):
     #     Role.RefPolicy: ray.remote(ActorRolloutRefWorker)
     # }
 
-    # TODO: CHANGE
+    # TODO: CHANGE - I cant tell if num_gpus has already been declared
+    temp_num_gpus = config.trainer.n_gpus_per_node * config.trainer.nnodes
+    print("NUM GPUS: ", temp_num_gpus)
     role_worker_mapping = {
-        Role.ActorRollout: ray.remote(num_gpus=1, num_cpus=1)(ActorRolloutRefWorker),
-        Role.RefPolicy: ray.remote(num_gpus=1, num_cpus=1)(ActorRolloutRefWorker),
+        Role.ActorRollout: ray.remote(num_gpus=temp_num_gpus, num_cpus=1)(ActorRolloutRefWorker),
+        Role.RefPolicy: ray.remote(num_gpus=temp_num_gpus, num_cpus=1)(ActorRolloutRefWorker)
     }
     # TODO: CHANGE
 
+    print("GPU CONFIGS: ", config.trainer.nnodes, config.trainer.n_gpus_per_node)
     global_pool_id = 'global_pool'
-    # resource_pool_spec = {
-    #     global_pool_id: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
-    # }
-
-    # TODO: CHANGE
     resource_pool_spec = {
-        global_pool_id: [1] * 1,
+        global_pool_id: [config.trainer.n_gpus_per_node] * config.trainer.nnodes
     }
-    # TODO: CHANGE
 
     mapping = {
         Role.ActorRollout: global_pool_id,
         Role.Critic: global_pool_id,
-        Role.RefPolicy: global_pool_id,
+        Role.RefPolicy: global_pool_id
     }
 
     # we should adopt a multi-source reward function here

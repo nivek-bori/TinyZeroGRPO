@@ -38,7 +38,8 @@ def main():
     actor_model_config = AutoConfig.from_pretrained(local_model_path, trust_remote_code=True)
     with torch.device("cuda"):
         actor_model = AutoModelForCausalLM.from_pretrained(local_model_path, trust_remote_code=True)
-        actor_model.to(torch.bfloat16)
+        actor_model = actor_model.to('cuda')
+        actor_model.to(torch.float16)
 
     max_prompt_length = 16
     response_length = 32
