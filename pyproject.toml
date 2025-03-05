@@ -33,6 +33,7 @@ dependencies = [
     "accelerate",
     "codetiming",
     "datasets",
+    "flash_attn",
     "dill",
     "hydra-core",
     "numpy",
