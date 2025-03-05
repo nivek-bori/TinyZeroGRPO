@@ -110,7 +110,7 @@ def main_task(config):
     # print initial config
     from pprint import pprint
     from omegaconf import OmegaConf
-    pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
+    # pprint(OmegaConf.to_container(config, resolve=True))  # resolve=True will eval symbol values
     OmegaConf.resolve(config)
 
     # download the checkpoint from hdfs
@@ -138,16 +138,29 @@ def main_task(config):
 
     from verl.trainer.ppo.ray_trainer import ResourcePoolManager, Role
 
+    # role_worker_mapping = {
+    #     Role.ActorRollout: ray.remote(ActorRolloutRefWorker),
+    #     Role.RefPolicy: ray.remote(ActorRolloutRefWorker)
+    # }
+
+    # TODO: CHANGE
     role_worker_mapping = {
-        Role.ActorRollout: ray.remote(ActorRolloutRefWorker),
-        Role.Critic: ray.remote(CriticWorker),
-        Role.RefPolicy: ray.remote(ActorRolloutRefWorker)
+        Role.ActorRollout: ray.remote(num_gpus=1, num_cpus=1)(ActorRolloutRefWorker),
+        Role.RefPolicy: ray.remote(num_gpus=1, num_cpus=1)(ActorRolloutRefWorker),
     }
+    # TODO: CHANGE
 
     global_pool_id = 'global_pool'
+    # resource_pool_spec = {
+    #     global_pool_id: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
+    # }
+
+    # TODO: CHANGE
     resource_pool_spec = {
-        global_pool_id: [config.trainer.n_gpus_per_node] * config.trainer.nnodes,
+        global_pool_id: [1] * 1,
     }
+    # TODO: CHANGE
+
     mapping = {
         Role.ActorRollout: global_pool_id,
         Role.Critic: global_pool_id,

@@ -249,8 +249,8 @@ class ActorRolloutRefWorker(Worker):
 
     def _build_rollout(self):
         from torch.distributed.device_mesh import init_device_mesh
-        # TODO(sgm): support FSDP hybrid shard for larger model
-        infer_tp = self.config.rollout.tensor_model_parallel_size
+        tensor_model_parallel_size = getattr(self.config.rollout, 'tensor_model_parallel_size', 1)
+        infer_tp = min(tensor_model_parallel_size, self.world_size)
         dp = self.world_size // infer_tp
         assert self.world_size % infer_tp == 0, f'rollout world_size: {self.world_size} is not divisible by infer_tp: {infer_tp}'
         rollout_device_mesh = init_device_mesh('cuda', mesh_shape=(dp, infer_tp), mesh_dim_names=['dp', 'infer_tp'])
@@ -265,6 +265,7 @@ class ActorRolloutRefWorker(Worker):
             from verl.workers.rollout.vllm_rollout import vLLMRollout
             from verl.workers.sharding_manager import FSDPVLLMShardingManager
             log_gpu_memory_usage('Before building vllm rollout', logger=None)
+            print("IMPORTANT:", self.config.rollout.tensor_model_parallel_size)
             rollout = vLLMRollout(actor_module=self.actor_module_fsdp,
                                   config=self.config.rollout,
                                   tokenizer=self.tokenizer,
