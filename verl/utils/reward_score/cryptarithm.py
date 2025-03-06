@@ -39,7 +39,7 @@ def compute_score(solution_str, ground_truth, format_score=0.1, score=1.0):
 
     if do_print:
         print("--------------------------------")
-        print(f"""Ground Truth : {answer} | {ground_truth[0]} + {ground_truth[1]} + {ground_truth[2]} = {ground_truth[3]}""")
+        print(f"""Ground Truth : {solution_str} | {ground_truth[0]} + {ground_truth[1]} + {ground_truth[2]} = {ground_truth[3]}""")
 
     answer = extract_solution(solution_str)
 

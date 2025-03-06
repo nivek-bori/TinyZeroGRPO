@@ -20,7 +20,7 @@ def extract_solution(solution_str):
 
 
 def make_prefix(equation):
-    question = f"""A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer. The user highly desires that the assistant does not give up, produces high quality thoughts, and produces many thoughts. User: Cryptarithms are puzzles in which the digits of a mathematical equation—often a simple addition problem—are replaced by letters or symbols. Each letter uniquely represents a single digit, and the challenge is to determine the correct digit for each letter so that the arithmetic operation is valid. Please solve this Cryptarithm. {equation[0]} + {equation[1]} + {equation[2]} = {equation[3]}. Show your work in <think> </think> tags. And return the decrypted equation's numbers in <answer> </answer> tags, for example <answer> 1948 + 3756 + 9574 = 15278 </answer>. Assistant: Let me solve this step by step. <think> """
+    question = f"""A conversation between User and Assistant. The user asks a question, and the Assistant solves it. The assistant first thinks about the reasoning process in the mind and then provides the user with the answer. The user highly desires that the assistant does not give up, produces high quality thoughts, and produces many thoughts. User: Cryptarithms are puzzles in which the digits of a mathematical equation—often a simple addition problem—are replaced by letters or symbols. Each letter uniquely represents a single digit, and the challenge is to determine the correct digit for each letter so that the arithmetic operation is valid. Please solve this Cryptarithm. {equation[0]} + {equation[1]} + {equation[2]} = {equation[3]}. Show your work in <think> </think> tags. And return the decrypted equation's numbers, not symbols, in <answer> </answer> tags, for example <answer> 1948 + 3756 + 9574 = 15278 </answer>. Assistant: Let me solve this accurately step by step. <think> """
 
     return question
 
@@ -28,8 +28,8 @@ def make_prefix(equation):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--local_dir', default='/workspace/TinyZeroGRPO/data/cryptarithm')
-    parser.add_argument('--train_size', default=8000)
-    parser.add_argument('--test_size', default=2000)
+    parser.add_argument('--train_size', default=800)
+    parser.add_argument('--test_size', default=200)
 
     args = parser.parse_args()
 
