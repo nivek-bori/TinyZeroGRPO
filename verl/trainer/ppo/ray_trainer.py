@@ -578,41 +578,38 @@ class RayPPOTrainer(object):
                 metrics = {}
                 timing_raw = {}
 
-                batch: DataProto = DataProto.from_single_dict(batch_dict)
-
-                # pop those keys for generation
-                gen_batch = batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'])
-
                 curr_rollouts = self.config.actor_rollout_ref.rollout.n
                 max_rollouts = self.config.actor_rollout_ref.rollout.max_n
                 additional_rollouts = self.config.actor_rollout_ref.rollout.additional_n
                 desired_adv_std = self.config.actor_rollout_ref.rollout.desired_adv_std
 
-                with _timer('step', timing_raw):
-                    with _timer('gen', timing_raw):
-                        gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
+                # Dynamic GRPO
+                while True:
+                    batch: DataProto = DataProto.from_single_dict(batch_dict)
 
-                    batch.non_tensor_batch['uid'] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))],dtype=object)
-                    batch = batch.repeat(repeat_times=curr_rollouts, interleave=True)
-                    batch = batch.union(gen_batch_output)
+                    gen_batch = batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'])
 
-                    # balance the number of valid tokens on each dp rank.
-                    # Please take care when you implement group based adv computation such as GRPO and rloo bc breaks order
-                    self._balance_batch(batch, metrics=metrics)
+                    with _timer('step', timing_raw):
+                        with _timer('gen', timing_raw):
+                            gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
 
-                    batch.meta_info['global_token_num'] = torch.sum(batch.batch['attention_mask'], dim=-1).tolist()
+                        batch.non_tensor_batch['uid'] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))],dtype=object)
+                        batch = batch.repeat(repeat_times=curr_rollouts, interleave=True)
+                        batch = batch.union(gen_batch_output)
+                        self._balance_batch(batch, metrics=metrics) # Please take care when you implement group based adv computation such as GRPO and rloo bc breaks order
 
-                    if self.use_reference_policy:
-                        with _timer('ref', timing_raw):
-                            ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(batch)
-                            batch = batch.union(ref_log_prob)
+                        batch.meta_info['global_token_num'] = torch.sum(batch.batch['attention_mask'], dim=-1).tolist()
 
-                    if self.use_critic:
-                        with _timer('values', timing_raw):
-                            values = self.critic_wg.compute_values(batch)
-                            batch = batch.union(values)
+                        if self.use_reference_policy:
+                            with _timer('ref', timing_raw):
+                                ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(batch)
+                                batch = batch.union(ref_log_prob)
 
-                    while True:
+                        if self.use_critic:
+                            with _timer('values', timing_raw):
+                                values = self.critic_wg.compute_values(batch)
+                                batch = batch.union(values)
+
                         with _timer('adv', timing_raw):
                             if self.use_rm:
                                 reward_tensor = self.rm_wg.compute_rm_score(batch)
@@ -629,6 +626,13 @@ class RayPPOTrainer(object):
 
                             batch = compute_advantage(batch, adv_estimator=self.config.algorithm.adv_estimator, gamma=self.config.algorithm.gamma, lam=self.config.algorithm.lam, num_repeat=curr_rollouts)
 
+                        # collect metrics
+                        metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
+                        metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
+
+                        # TODO: make a canonical logger that supports various backend
+                        logger.log(data=metrics, step=self.global_steps)
+
                         if 'advantages' in batch.batch:
                             advantages = batch.batch['advantages']
                             if advantages.dim() > 1:
@@ -636,56 +640,46 @@ class RayPPOTrainer(object):
                             adv_std = advantages.std().item()
                             metrics['adv_std'] = adv_std
                         else:
+                            print("Dynamic GRPO: No more additional rollouts")
                             break
 
-                        if adv_std <= desired_adv_std or curr_rollouts >= max_rollouts:
+                        if adv_std <= desired_adv_std:
+                            print("Dynamic GRPO: Desired metric reached")
+                            break
+                        elif curr_rollouts >= max_rollouts:
+                            print("Dynamic GRPO: Max rollouts reached")
                             break
                         else:
                             curr_rollouts += additional_rollouts
-                            print(f"Current adv_std {adv_std:.4f} exceeds desired {desired_adv_std:.4f}. Increasing rollout count to {curr_rollouts}.")
+                            print(f"Current adv_std {adv_std:.4f} > {desired_adv_std:.4f} -> Increasing rollout count to {curr_rollouts}.")
 
-                            with _timer('gen', timing_raw):
-                                new_gen_output = self.actor_rollout_wg.generate_sequences(gen_batch)
-                            new_batch = DataProto.from_single_dict(batch_dict)
-                            new_batch = new_batch.repeat(repeat_times=additional_rollouts, interleave=True)
-                            new_batch = new_batch.union(new_gen_output)
+                # After dynamic GRPO
+                # update critic
+                if self.use_critic:
+                    with _timer('update_critic', timing_raw):
+                        critic_output = self.critic_wg.update_critic(batch)
+                    critic_output_metrics = reduce_metrics(critic_output.meta_info['metrics'])
+                    metrics.update(critic_output_metrics)
 
-                            self._balance_batch(new_batch, metrics=metrics)
-                            batch = batch.union(new_batch)
+                # implement critic warmup
+                if self.config.trainer.critic_warmup <= self.global_steps:
+                    # update actor
+                    with _timer('update_actor', timing_raw):
+                        actor_output = self.actor_rollout_wg.update_actor(batch)
+                    actor_output_metrics = reduce_metrics(actor_output.meta_info['metrics'])
+                    metrics.update(actor_output_metrics)
 
-                    # update critic
-                    if self.use_critic:
-                        with _timer('update_critic', timing_raw):
-                            critic_output = self.critic_wg.update_critic(batch)
-                        critic_output_metrics = reduce_metrics(critic_output.meta_info['metrics'])
-                        metrics.update(critic_output_metrics)
+                # validate
+                if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and \
+                    self.global_steps % self.config.trainer.test_freq == 0:
+                    with _timer('testing', timing_raw):
+                        val_metrics: dict = self._validate()
+                    metrics.update(val_metrics)
 
-                    # implement critic warmup
-                    if self.config.trainer.critic_warmup <= self.global_steps:
-                        # update actor
-                        with _timer('update_actor', timing_raw):
-                            actor_output = self.actor_rollout_wg.update_actor(batch)
-                        actor_output_metrics = reduce_metrics(actor_output.meta_info['metrics'])
-                        metrics.update(actor_output_metrics)
-
-                    # validate
-                    if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and \
-                        self.global_steps % self.config.trainer.test_freq == 0:
-                        with _timer('testing', timing_raw):
-                            val_metrics: dict = self._validate()
-                        metrics.update(val_metrics)
-
-                    if self.config.trainer.save_freq > 0 and \
-                            self.global_steps % self.config.trainer.save_freq == 0:
-                        with _timer('save_checkpoint', timing_raw):
-                            self._save_checkpoint()
-
-                # collect metrics
-                metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
-                metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
-
-                # TODO: make a canonical logger that supports various backend
-                logger.log(data=metrics, step=self.global_steps)
+                if self.config.trainer.save_freq > 0 and \
+                        self.global_steps % self.config.trainer.save_freq == 0:
+                    with _timer('save_checkpoint', timing_raw):
+                        self._save_checkpoint()
 
                 self.global_steps += 1
 
