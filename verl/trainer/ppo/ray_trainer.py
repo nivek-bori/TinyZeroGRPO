@@ -583,65 +583,75 @@ class RayPPOTrainer(object):
                 # pop those keys for generation
                 gen_batch = batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'])
 
+                curr_rollouts = self.config.actor_rollout_ref.rollout.n
+                max_rollouts = self.config.actor_rollout_ref.rollout.max_n
+                additional_rollouts = self.config.actor_rollout_ref.rollout.additional_n
+                desired_adv_std = self.config.actor_rollout_ref.rollout.desired_adv_std
+
                 with _timer('step', timing_raw):
-                    # generate a batch
                     with _timer('gen', timing_raw):
                         gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
 
-                    batch.non_tensor_batch['uid'] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))],
-                                                             dtype=object)
-                    # repeat to align with repeated responses in rollout
-                    batch = batch.repeat(repeat_times=self.config.actor_rollout_ref.rollout.n, interleave=True)
+                    batch.non_tensor_batch['uid'] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))],dtype=object)
+                    batch = batch.repeat(repeat_times=curr_rollouts, interleave=True)
                     batch = batch.union(gen_batch_output)
 
                     # balance the number of valid tokens on each dp rank.
-                    # Note that this breaks the order of data inside the batch.
-                    # Please take care when you implement group based adv computation such as GRPO and rloo
+                    # Please take care when you implement group based adv computation such as GRPO and rloo bc breaks order
                     self._balance_batch(batch, metrics=metrics)
 
-                    # compute global_valid tokens
                     batch.meta_info['global_token_num'] = torch.sum(batch.batch['attention_mask'], dim=-1).tolist()
 
                     if self.use_reference_policy:
-                        # compute reference log_prob
                         with _timer('ref', timing_raw):
                             ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(batch)
                             batch = batch.union(ref_log_prob)
 
-                    # compute values
                     if self.use_critic:
                         with _timer('values', timing_raw):
                             values = self.critic_wg.compute_values(batch)
                             batch = batch.union(values)
 
-                    with _timer('adv', timing_raw):
-                        # compute scores. Support both model and function-based.
-                        # We first compute the scores using reward model. Then, we call reward_fn to combine
-                        # the results from reward model and rule-based results.
-                        if self.use_rm:
-                            # we first compute reward model score
-                            reward_tensor = self.rm_wg.compute_rm_score(batch)
-                            batch = batch.union(reward_tensor)
+                    while True:
+                        with _timer('adv', timing_raw):
+                            if self.use_rm:
+                                reward_tensor = self.rm_wg.compute_rm_score(batch)
+                                batch = batch.union(reward_tensor)
 
-                        # we combine with rule-based rm
-                        reward_tensor = self.reward_fn(batch)
-                        batch.batch['token_level_scores'] = reward_tensor
+                            reward_tensor = self.reward_fn(batch)
+                            batch.batch['token_level_scores'] = reward_tensor
 
-                        # compute rewards. apply_kl_penalty if available
-                        if not self.config.actor_rollout_ref.actor.use_kl_loss:
-                            batch, kl_metrics = apply_kl_penalty(batch,
-                                                                 kl_ctrl=self.kl_ctrl,
-                                                                 kl_penalty=self.config.algorithm.kl_penalty)
-                            metrics.update(kl_metrics)
+                            if not self.config.actor_rollout_ref.actor.use_kl_loss:
+                                batch, kl_metrics = apply_kl_penalty(batch,kl_ctrl=self.kl_ctrl, kl_penalty=self.config.algorithm.kl_penalty)
+                                metrics.update(kl_metrics)
+                            else:
+                                batch.batch['token_level_rewards'] = batch.batch['token_level_scores']
+
+                            batch = compute_advantage(batch, adv_estimator=self.config.algorithm.adv_estimator, gamma=self.config.algorithm.gamma, lam=self.config.algorithm.lam, num_repeat=curr_rollouts)
+
+                        if 'advantages' in batch.batch:
+                            advantages = batch.batch['advantages']
+                            if advantages.dim() > 1:
+                                advantages = advantages.mean(dim=-1)
+                            adv_std = advantages.std().item()
+                            metrics['adv_std'] = adv_std
                         else:
-                            batch.batch['token_level_rewards'] = batch.batch['token_level_scores']
+                            break
 
-                        # compute advantages, executed on the driver process
-                        batch = compute_advantage(batch,
-                                                  adv_estimator=self.config.algorithm.adv_estimator,
-                                                  gamma=self.config.algorithm.gamma,
-                                                  lam=self.config.algorithm.lam,
-                                                  num_repeat=self.config.actor_rollout_ref.rollout.n)
+                        if adv_std <= desired_adv_std or curr_rollouts >= max_rollouts:
+                            break
+                        else:
+                            curr_rollouts += additional_rollouts
+                            print(f"Current adv_std {adv_std:.4f} exceeds desired {desired_adv_std:.4f}. Increasing rollout count to {curr_rollouts}.")
+
+                            with _timer('gen', timing_raw):
+                                new_gen_output = self.actor_rollout_wg.generate_sequences(gen_batch)
+                            new_batch = DataProto.from_single_dict(batch_dict)
+                            new_batch = new_batch.repeat(repeat_times=additional_rollouts, interleave=True)
+                            new_batch = new_batch.union(new_gen_output)
+
+                            self._balance_batch(new_batch, metrics=metrics)
+                            batch = batch.union(new_batch)
 
                     # update critic
                     if self.use_critic:
