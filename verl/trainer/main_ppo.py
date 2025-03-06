@@ -58,13 +58,6 @@ class RewardManager():
         for i in range(len(data)):
             data_item = data[i]  # DataProtoItem
 
-            # TODO: REMOVE
-            print("Data item batch keys:", data_item.batch.keys())
-            print("Data item non_tensor_batch keys:", data_item.non_tensor_batch.keys())
-            print("Reward Model:", data_item.non_tensor_batch['reward_model'].keys())
-            print("Reward Model:", data_item.non_tensor_batch['reward_model'].values())
-            # TODO: REMOVE
-
             prompt_ids = data_item.batch['prompts']
 
             prompt_length = prompt_ids.shape[-1]

@@ -28,8 +28,8 @@ def make_prefix(equation):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--local_dir', default='/workspace/TinyZeroGRPO/data/cryptarithm')
-    parser.add_argument('--train_size', default=800)
-    parser.add_argument('--test_size', default=200)
+    parser.add_argument('--train_size', default=2)
+    parser.add_argument('--test_size', default=1)
 
     args = parser.parse_args()
 

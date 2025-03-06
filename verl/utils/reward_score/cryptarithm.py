@@ -1,4 +1,5 @@
 import re
+import random
 import torch
 
 def extract_solution(solution_str):
@@ -35,7 +36,8 @@ def validate_equation(equation, ground_truth):
     return True
 
 def compute_score(solution_str, ground_truth, format_score=0.1, score=1.0):
-    do_print = True
+    do_print = random.randint(0, 100) == 0
+    do_print = False
 
     if do_print:
         print("--------------------------------")
