@@ -398,8 +398,8 @@ class ActorRolloutRefWorker(Worker):
         return output
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
-    def generate_sequences(self, prompts: DataProto):
-        prompts = prompts.to('cuda')
+    def generate_sequences(self, prompts: DataProto, num_repeats = None):
+        prompts = prompts[0].to('cuda')
         # set to False if it is validation
         recompute_log_prob = prompts.meta_info.get('recompute_log_prob', True)
 
@@ -416,7 +416,7 @@ class ActorRolloutRefWorker(Worker):
             log_gpu_memory_usage('After entering rollout sharding manager', logger=logger)
 
             prompts = self.rollout_sharding_manager.preprocess_data(prompts)
-            output = self.rollout.generate_sequences(prompts=prompts)
+            output = self.rollout.generate_sequences(prompts, num_repeats=num_repeats)
 
             log_gpu_memory_usage('After rollout generation', logger=logger)
 
@@ -447,7 +447,6 @@ class ActorRolloutRefWorker(Worker):
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_ref_log_prob(self, data: DataProto):
-        print("Compute Log Init")
         assert self._is_ref
 
         data = data.to('cuda')

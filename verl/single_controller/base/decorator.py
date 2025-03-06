@@ -46,13 +46,22 @@ def _split_args_kwargs_data_proto(chunks, *args, **kwargs):
     from verl.protocol import DataProto, DataProtoFuture
     splitted_args = []
     for arg in args:
-        assert isinstance(arg, (DataProto, DataProtoFuture))
-        splitted_args.append(arg.chunk(chunks=chunks))
+        if isinstance(arg, (DataProto, DataProtoFuture)):
+            splitted_args.append(arg.chunk(chunks=chunks))
+        elif (isinstance(arg, (int))):
+            splitted_args.append(arg)
+        else:
+            raise AssertionError(f"Unexpected type for key {key}: {type(val)}")
 
     splitted_kwargs = {}
     for key, val in kwargs.items():
-        assert isinstance(val, (DataProto, DataProtoFuture))
-        splitted_kwargs[key] = val.chunk(chunks=chunks)
+        if isinstance(val, (DataProto, DataProtoFuture)):
+            splitted_kwargs[key] = val.chunk(chunks=chunks)
+        elif isinstance(val, int):
+            # For integers (like your repeats parameter), pass them unchanged.
+            splitted_kwargs[key] = val
+        else:
+            raise AssertionError(f"Unexpected type for key {key}: {type(val)}")
 
     return splitted_args, splitted_kwargs
 

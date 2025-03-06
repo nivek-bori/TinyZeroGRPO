@@ -562,7 +562,7 @@ class RayPPOTrainer(object):
 
         # perform validation before training
         # currently, we only support validation using the reward_function.
-        if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', True):
+        if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', False):
             val_metrics = self._validate()
             pprint(f'Initial validation metrics: {val_metrics}')
             logger.log(data=val_metrics, step=self.global_steps)
@@ -578,23 +578,31 @@ class RayPPOTrainer(object):
                 metrics = {}
                 timing_raw = {}
 
-                curr_rollouts = self.config.actor_rollout_ref.rollout.n
+                curr_rollout = self.config.actor_rollout_ref.rollout.n
                 max_rollouts = self.config.actor_rollout_ref.rollout.max_n
                 additional_rollouts = self.config.actor_rollout_ref.rollout.additional_n
                 desired_adv_std = self.config.actor_rollout_ref.rollout.desired_adv_std
 
                 # Dynamic GRPO
-                while True:
+                continue_running = True
+                while continue_running:
+                    print(f"""NUM ROLLOUTS: {curr_rollout}, {max_rollouts}""")
                     batch: DataProto = DataProto.from_single_dict(batch_dict)
 
                     gen_batch = batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'])
 
                     with _timer('step', timing_raw):
+                        print("GENERATING")
                         with _timer('gen', timing_raw):
-                            gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch)
+                            gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch, num_repeats=curr_rollout)
+
+                        print("REPEATING")
 
                         batch.non_tensor_batch['uid'] = np.array([str(uuid.uuid4()) for _ in range(len(batch.batch))],dtype=object)
-                        batch = batch.repeat(repeat_times=curr_rollouts, interleave=True)
+                        batch = batch.repeat(repeat_times=curr_rollout, interleave=True)
+
+                        print("UNIONING")
+
                         batch = batch.union(gen_batch_output)
                         self._balance_batch(batch, metrics=metrics) # Please take care when you implement group based adv computation such as GRPO and rloo bc breaks order
 
@@ -610,6 +618,8 @@ class RayPPOTrainer(object):
                                 values = self.critic_wg.compute_values(batch)
                                 batch = batch.union(values)
 
+                        print("CALCULATING ADVANTAGE")
+
                         with _timer('adv', timing_raw):
                             if self.use_rm:
                                 reward_tensor = self.rm_wg.compute_rm_score(batch)
@@ -624,7 +634,7 @@ class RayPPOTrainer(object):
                             else:
                                 batch.batch['token_level_rewards'] = batch.batch['token_level_scores']
 
-                            batch = compute_advantage(batch, adv_estimator=self.config.algorithm.adv_estimator, gamma=self.config.algorithm.gamma, lam=self.config.algorithm.lam, num_repeat=curr_rollouts)
+                            batch = compute_advantage(batch, adv_estimator=self.config.algorithm.adv_estimator, gamma=self.config.algorithm.gamma, lam=self.config.algorithm.lam, num_repeat=curr_rollout)
 
                         # collect metrics
                         metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
@@ -641,17 +651,22 @@ class RayPPOTrainer(object):
                             metrics['adv_std'] = adv_std
                         else:
                             print("Dynamic GRPO: No more additional rollouts")
+                            continue_running = False
                             break
 
-                        if adv_std <= desired_adv_std:
-                            print("Dynamic GRPO: Desired metric reached")
+                        if curr_rollout >= max_rollouts:
+                            print("Dynamic GRPO: Max rollouts reached", adv_std)
                             break
-                        elif curr_rollouts >= max_rollouts:
-                            print("Dynamic GRPO: Max rollouts reached")
-                            break
+                        elif adv_std > desired_adv_std:
+                            print("Dynamic GRPO: Desired metric reached", adv_std)
+                            if self.config.actor_rollout_ref.rollout.testingGRPO:
+                                curr_rollout += additional_rollouts
+                            else:
+                                continue_running = False
+                                break
                         else:
-                            curr_rollouts += additional_rollouts
-                            print(f"Current adv_std {adv_std:.4f} > {desired_adv_std:.4f} -> Increasing rollout count to {curr_rollouts}.")
+                            curr_rollout += additional_rollouts
+                            print(f"Current versus Desired Advantage - {adv_std:.4f} vs. {desired_adv_std:.45} -> New rollout: {curr_rollout}")
 
                 # After dynamic GRPO
                 # update critic

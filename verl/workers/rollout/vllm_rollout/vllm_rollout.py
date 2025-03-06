@@ -140,6 +140,12 @@ class vLLMRollout(BaseRollout):
 
     @torch.no_grad()
     def generate_sequences(self, prompts: DataProto, **kwargs) -> DataProto:
+        num_repeats = self.config.n
+        if 'num_repeats' in kwargs:
+            if kwargs['num_repeats'] is not None:
+                num_repeats = kwargs['num_repeats']
+                kwargs['n'] = num_repeats
+
         # rebuild vllm cache engine
         if self.config.free_cache_engine:
             self.inference_engine.init_cache_engine()
@@ -167,7 +173,7 @@ class vLLMRollout(BaseRollout):
                 'top_k': -1,
                 'min_p': 0.0,
                 'temperature': 0,
-                'n': 1  # if greedy, only 1 response
+                'n': num_repeats  # if greedy, only 1 response
             }
 
         # users can customize different sampling_params at different run
@@ -187,11 +193,11 @@ class vLLMRollout(BaseRollout):
             response = pad_sequence_to_length(response, self.config.response_length, self.pad_token_id)
             log_probs = pad_sequence_to_length(log_probs, self.config.response_length, self.pad_token_id)
 
-        if self.config.n > 1 and do_sample:
-            idx = idx.repeat_interleave(self.config.n, dim=0)
-            attention_mask = attention_mask.repeat_interleave(self.config.n, dim=0)
-            position_ids = position_ids.repeat_interleave(self.config.n, dim=0)
-            batch_size = batch_size * self.config.n
+        if num_repeats > 1 and do_sample:
+            idx = idx.repeat_interleave(num_repeats, dim=0)
+            attention_mask = attention_mask.repeat_interleave(num_repeats, dim=0)
+            position_ids = position_ids.repeat_interleave(num_repeats, dim=0)
+            batch_size = batch_size * num_repeats
         seq = torch.cat([idx, response], dim=-1)
 
         response_length = response.size(1)
