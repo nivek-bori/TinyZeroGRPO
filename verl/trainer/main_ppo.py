@@ -17,12 +17,14 @@ Note that we don't combine the main with ray_trainer as ray_trainer is used by o
 
 from verl import DataProto
 import torch
-from verl.utils.reward_score import gsm8k, math, multiply, countdown
+from verl.utils.reward_score import gsm8k, math, multiply, countdown, cryptarithm
 from verl.trainer.ppo.ray_trainer import RayPPOTrainer
 
 
 def _select_rm_score_fn(data_source):
-    if data_source == 'openai/gsm8k':
+    if data_source == 'cryptarithm':
+        return cryptarithm.compute_score
+    elif data_source == 'openai/gsm8k':
         return gsm8k.compute_score
     elif data_source == 'lighteval/MATH':
         return math.compute_score
@@ -56,6 +58,13 @@ class RewardManager():
         for i in range(len(data)):
             data_item = data[i]  # DataProtoItem
 
+            # TODO: REMOVE
+            print("Data item batch keys:", data_item.batch.keys())
+            print("Data item non_tensor_batch keys:", data_item.non_tensor_batch.keys())
+            print("Reward Model:", data_item.non_tensor_batch['reward_model'].keys())
+            print("Reward Model:", data_item.non_tensor_batch['reward_model'].values())
+            # TODO: REMOVE
+
             prompt_ids = data_item.batch['prompts']
 
             prompt_length = prompt_ids.shape[-1]
@@ -71,10 +80,16 @@ class RewardManager():
             sequences = torch.cat((valid_prompt_ids, valid_response_ids))
             sequences_str = self.tokenizer.decode(sequences)
 
-            ground_truth = data_item.non_tensor_batch['reward_model']['ground_truth']
+            data_source = data_item.non_tensor_batch['data_source']
+
+            ground_truth = None
+            if data_source == 'cryptarithm':
+                ground_truth = data_item.non_tensor_batch['reward_model']['encrypted_equation']
+            elif data_source == 'countdown':
+                ground_truth = data_item.non_tensor_batch['reward_model']['ground_truth']
 
             # select rm_score
-            data_source = data_item.non_tensor_batch['data_source']
+            
             compute_score_fn = _select_rm_score_fn(data_source)
 
             score = compute_score_fn(solution_str=sequences_str, ground_truth=ground_truth)
