@@ -411,10 +411,11 @@ class RayPPOTrainer(object):
 
             # pad to be divisible by dp_size
             test_gen_batch_padded, pad_size = pad_dataproto_to_divisor(test_gen_batch, self.actor_rollout_wg.world_size)
+            print("Validation Generation Init")
             test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
+            print("Validation Generation End")
             # unpad
             test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
-            print('validation generation end')
 
             test_batch = test_batch.union(test_output_gen_batch)
 
