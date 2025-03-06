@@ -8,8 +8,8 @@ python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=grpo \
     data.train_files=/workspace/TinyZeroGRPO/data/cryptarithm/train.parquet \
     data.val_files=/workspace/TinyZeroGRPO/data/cryptarithm/test.parquet \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \
     data.max_prompt_length=512 \
+    actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
     data.train_batch_size=128 \
     data.val_batch_size=128 \
     data.max_response_length=2048 \
@@ -17,9 +17,9 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.ppo_mini_batch_size=32 \
     actor_rollout_ref.actor.ppo_micro_batch_size=32 \
     actor_rollout_ref.rollout.n=1 \
-    actor_rollout_ref.rollout.max_n-=8 \
-    actor_rollout_ref.rollout.additional_n=1 \
-    actor_rollout_ref.rollout.desired_adv_std=0.1 \
+    +actor_rollout_ref.rollout.max_n=8 \
+    +actor_rollout_ref.rollout.additional_n=1 \
+    +actor_rollout_ref.rollout.desired_adv_std=0.1 \
     actor_rollout_ref.ref.log_prob_micro_batch_size=32 \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.ref.fsdp_config.param_offload=True \
