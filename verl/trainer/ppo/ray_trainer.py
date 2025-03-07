@@ -662,10 +662,10 @@ class RayPPOTrainer(object):
                             continue
                         else:
                             curr_rollout += additional_rollouts
-                            print(f"Current versus Desired Advantage - {adv_std:.4f} vs. {desired_adv_std:.45} -> New rollout: {curr_rollout}")
+                            print(f"Current versus Desired Advantage - {adv_std} vs. {desired_adv_std} -> New rollout: {curr_rollout}")
 
                 print("LOGGING")
-                wandb.init(project=self.config.trainer.project_name, name=self.config.trainer.experiment_name)
+                print(metrics)
                 wandb.log(data=metrics, step=self.global_steps)
 
                 # After dynamic GRPO
