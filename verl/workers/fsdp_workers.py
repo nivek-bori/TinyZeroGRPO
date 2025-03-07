@@ -399,7 +399,9 @@ class ActorRolloutRefWorker(Worker):
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def generate_sequences(self, prompts: DataProto, num_repeats = None):
-        prompts = prompts[0].to('cuda')
+        if prompts and isinstance(prompts, list):
+            prompts = prompts[0]
+        prompts = prompts.to('cuda')
         # set to False if it is validation
         recompute_log_prob = prompts.meta_info.get('recompute_log_prob', True)
 

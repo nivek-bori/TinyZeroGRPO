@@ -25,6 +25,9 @@ class Tracking(object):
     supported_backend = ['wandb', 'mlflow', 'console']
 
     def __init__(self, project_name, experiment_name, default_backend: Union[str, List[str]] = 'console', config=None):
+        self.project_name = project_name
+        self.experiment_name = experiment_name
+
         if isinstance(default_backend, str):
             default_backend = [default_backend]
         for backend in default_backend:
@@ -36,14 +39,14 @@ class Tracking(object):
 
         self.logger = {}
 
-        if 'tracking' in default_backend or 'wandb' in default_backend:
-            import wandb
-            import os
-            WANDB_API_KEY = os.environ.get("WANDB_API_KEY", None)
-            if WANDB_API_KEY:
-                wandb.login(key=WANDB_API_KEY)
-            wandb.init(project=project_name, name=experiment_name, config=config)
-            self.logger['wandb'] = wandb
+        print("WANDB INIT")
+        import wandb
+        import os
+        WANDB_API_KEY = os.environ.get("WANDB_API_KEY", None)
+        if WANDB_API_KEY:
+            wandb.login(key=WANDB_API_KEY)
+        wandb.init(project=project_name, name=experiment_name, config=config)
+        self.logger['wandb'] = wandb
 
         if 'mlflow' in default_backend:
             import mlflow
@@ -101,3 +104,8 @@ def _flatten_dict(raw: Dict[str, Any], *, sep: str) -> Dict[str, Any]:
     ans = pd.json_normalize(raw, sep=sep).to_dict(orient='records')[0]
     assert isinstance(ans, dict)
     return ans
+
+if __name__ == '__main__':
+    logger = Tracking(project_name="test_rent", experiment_name='dff',default_backend=['console', 'wandb'])
+    logger.log(data={"A" : 1, "B" : 2}, step=0)
+    logger.log(data={"A" : 2, "B" : 3}, step=1)

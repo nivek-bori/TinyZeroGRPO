@@ -219,6 +219,7 @@ class DataParallelPPOActor(BasePPOActor):
 
         metrics = {}
         for batch_idx, data in enumerate(dataloader):
+            print(f"Training Batch {batch_idx} / {len(dataloader)}")
             # split batch into micro_batches
             mini_batch = data
             if self.config.use_dynamic_bsz:

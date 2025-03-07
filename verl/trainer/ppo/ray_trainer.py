@@ -35,6 +35,7 @@ from verl.single_controller.ray.base import create_colocated_worker_cls
 from verl.trainer.ppo import core_algos
 from verl.utils.seqlen_balancing import get_seqlen_balanced_partitions, log_seqlen_unbalance
 
+
 WorkerType = Type[Worker]
 
 
@@ -390,6 +391,7 @@ class RayPPOTrainer(object):
             self.config.critic.optim.total_training_steps = total_training_steps
 
     def _validate(self):
+        print("STARTING VALIDATION")
         reward_tensor_lst = []
         data_source_lst = []
         for test_data in self.val_dataloader:
@@ -414,7 +416,6 @@ class RayPPOTrainer(object):
             test_output_gen_batch_padded = self.actor_rollout_wg.generate_sequences(test_gen_batch_padded)
             # unpad
             test_output_gen_batch = unpad_dataproto(test_output_gen_batch_padded, pad_size=pad_size)
-            print('validation generation end')
 
             test_batch = test_batch.union(test_output_gen_batch)
 
@@ -439,6 +440,7 @@ class RayPPOTrainer(object):
         for data_source, rewards in data_source_reward.items():
             metric_dict[f'val/test_score/{data_source}'] = np.mean(rewards)
 
+        print("ENDING VALIDATION")
         return metric_dict
 
     def init_workers(self):
@@ -545,18 +547,13 @@ class RayPPOTrainer(object):
         metrics.update(global_balance_stats)
 
     def fit(self):
-        """
-        The training loop of PPO.
-        The driver process only need to call the compute functions of the worker group through RPC to construct the PPO dataflow.
-        The light-weight advantage computation is done on the driver process.
-        """
         from verl.utils.tracking import Tracking
         from omegaconf import OmegaConf
+        import wandb
 
-        logger = Tracking(project_name=self.config.trainer.project_name,
-                          experiment_name=self.config.trainer.experiment_name,
-                          default_backend=self.config.trainer.logger,
-                          config=OmegaConf.to_container(self.config, resolve=True))
+        wandb.init(project=self.config.trainer.project_name, name=self.config.trainer.experiment_name)
+
+        wandb.log(data={'A':1, 'B':2})
 
         self.global_steps = 0
 
@@ -565,7 +562,7 @@ class RayPPOTrainer(object):
         if self.val_reward_fn is not None and self.config.trainer.get('val_before_train', False):
             val_metrics = self._validate()
             pprint(f'Initial validation metrics: {val_metrics}')
-            logger.log(data=val_metrics, step=self.global_steps)
+            wondb.log(data=val_metrics, step=self.global_steps)
             if self.config.trainer.get('val_only', False):
                 return
 
@@ -575,6 +572,7 @@ class RayPPOTrainer(object):
         for epoch in range(self.config.trainer.total_epochs):
             for batch_dict in self.train_dataloader:
                 print(f'epoch {epoch}, step {self.global_steps}')
+
                 metrics = {}
                 timing_raw = {}
 
@@ -587,7 +585,10 @@ class RayPPOTrainer(object):
                 continue_running = True
                 while continue_running:
                     print(f"""NUM ROLLOUTS: {curr_rollout}, {max_rollouts}""")
+                    
                     batch: DataProto = DataProto.from_single_dict(batch_dict)
+                    metrics = {}
+                    timing_raw = {}
 
                     gen_batch = batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'])
 
@@ -640,9 +641,6 @@ class RayPPOTrainer(object):
                         metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
                         metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
 
-                        # TODO: make a canonical logger that supports various backend
-                        logger.log(data=metrics, step=self.global_steps)
-
                         if 'advantages' in batch.batch:
                             advantages = batch.batch['advantages']
                             if advantages.dim() > 1:
@@ -652,41 +650,40 @@ class RayPPOTrainer(object):
                         else:
                             print("Dynamic GRPO: No more additional rollouts")
                             continue_running = False
-                            break
+                            continue
 
                         if curr_rollout >= max_rollouts:
                             print("Dynamic GRPO: Max rollouts reached", adv_std)
-                            break
+                            continue_running = False
+                            continue
                         elif adv_std > desired_adv_std:
                             print("Dynamic GRPO: Desired metric reached", adv_std)
-                            if self.config.actor_rollout_ref.rollout.testingGRPO:
-                                curr_rollout += additional_rollouts
-                            else:
-                                continue_running = False
-                                break
+                            continue_running = False
+                            continue
                         else:
                             curr_rollout += additional_rollouts
                             print(f"Current versus Desired Advantage - {adv_std:.4f} vs. {desired_adv_std:.45} -> New rollout: {curr_rollout}")
 
+                print("LOGGING")
+                wandb.init(project=self.config.trainer.project_name, name=self.config.trainer.experiment_name)
+                wandb.log(data=metrics, step=self.global_steps)
+
                 # After dynamic GRPO
-                # update critic
                 if self.use_critic:
                     with _timer('update_critic', timing_raw):
                         critic_output = self.critic_wg.update_critic(batch)
                     critic_output_metrics = reduce_metrics(critic_output.meta_info['metrics'])
                     metrics.update(critic_output_metrics)
 
-                # implement critic warmup
                 if self.config.trainer.critic_warmup <= self.global_steps:
-                    # update actor
+                    print("STARTING ACTOR TRAINING")
                     with _timer('update_actor', timing_raw):
                         actor_output = self.actor_rollout_wg.update_actor(batch)
                     actor_output_metrics = reduce_metrics(actor_output.meta_info['metrics'])
                     metrics.update(actor_output_metrics)
+                    print("ENDING ACTOR TRAINING")
 
-                # validate
-                if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and \
-                    self.global_steps % self.config.trainer.test_freq == 0:
+                if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and self.global_steps % self.config.trainer.test_freq == 0:
                     with _timer('testing', timing_raw):
                         val_metrics: dict = self._validate()
                     metrics.update(val_metrics)
@@ -699,10 +696,8 @@ class RayPPOTrainer(object):
                 self.global_steps += 1
 
                 if self.global_steps >= self.total_training_steps:
-
-                    # perform validation after training
                     if self.val_reward_fn is not None:
                         val_metrics = self._validate()
                         pprint(f'Final validation metrics: {val_metrics}')
-                        logger.log(data=val_metrics, step=self.global_steps)
+                        wandb.log(data=val_metrics, step=self.global_steps)
                     return
