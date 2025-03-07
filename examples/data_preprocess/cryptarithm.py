@@ -28,7 +28,7 @@ def make_prefix(equation):
 
 
 if __name__ == '__main__':
-    default_num_samples = 2000
+    default_num_samples = 20000
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--local_dir', default='/workspace/TinyZeroGRPO/data/cryptarithm')

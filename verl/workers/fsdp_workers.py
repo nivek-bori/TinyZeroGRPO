@@ -447,7 +447,6 @@ class ActorRolloutRefWorker(Worker):
 
     @register(dispatch_mode=Dispatch.DP_COMPUTE_PROTO)
     def compute_ref_log_prob(self, data: DataProto):
-        print("Compute Log Init")
         assert self._is_ref
 
         data = data.to('cuda')
