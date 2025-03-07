@@ -553,8 +553,6 @@ class RayPPOTrainer(object):
 
         wandb.init(project=self.config.trainer.project_name, name=self.config.trainer.experiment_name)
 
-        wandb.log(data={'A':1, 'B':2})
-
         self.global_steps = 0
 
         # perform validation before training
@@ -581,18 +579,18 @@ class RayPPOTrainer(object):
                 additional_rollouts = self.config.actor_rollout_ref.rollout.additional_n
                 desired_adv_std = self.config.actor_rollout_ref.rollout.desired_adv_std
 
-                # Dynamic GRPO
-                continue_running = True
-                while continue_running:
-                    print(f"""NUM ROLLOUTS: {curr_rollout}, {max_rollouts}""")
-                    
-                    batch: DataProto = DataProto.from_single_dict(batch_dict)
-                    metrics = {}
-                    timing_raw = {}
+                with _timer('step', timing_raw):
+                    # Dynamic GRPO
+                    continue_running = True
+                    while continue_running:
+                        print(f"""NUM ROLLOUTS: {curr_rollout}, {max_rollouts}""")
+                        
+                        batch: DataProto = DataProto.from_single_dict(batch_dict)
+                        metrics = {}
+                        timing_raw = {}
 
-                    gen_batch = batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'])
+                        gen_batch = batch.pop(batch_keys=['input_ids', 'attention_mask', 'position_ids'])
 
-                    with _timer('step', timing_raw):
                         print("GENERATING")
                         with _timer('gen', timing_raw):
                             gen_batch_output = self.actor_rollout_wg.generate_sequences(gen_batch, num_repeats=curr_rollout)
@@ -637,10 +635,6 @@ class RayPPOTrainer(object):
 
                             batch = compute_advantage(batch, adv_estimator=self.config.algorithm.adv_estimator, gamma=self.config.algorithm.gamma, lam=self.config.algorithm.lam, num_repeat=curr_rollout)
 
-                        # collect metrics
-                        metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
-                        metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
-
                         if 'advantages' in batch.batch:
                             advantages = batch.batch['advantages']
                             if advantages.dim() > 1:
@@ -664,34 +658,37 @@ class RayPPOTrainer(object):
                             curr_rollout += additional_rollouts
                             print(f"Current versus Desired Advantage - {adv_std} vs. {desired_adv_std} -> New rollout: {curr_rollout}")
 
+                    # After dynamic GRPO
+                    if self.use_critic:
+                        with _timer('update_critic', timing_raw):
+                            critic_output = self.critic_wg.update_critic(batch)
+                        critic_output_metrics = reduce_metrics(critic_output.meta_info['metrics'])
+                        metrics.update(critic_output_metrics)
+
+                    if self.config.trainer.critic_warmup <= self.global_steps:
+                        print("STARTING ACTOR TRAINING")
+                        with _timer('update_actor', timing_raw):
+                            actor_output = self.actor_rollout_wg.update_actor(batch)
+                        actor_output_metrics = reduce_metrics(actor_output.meta_info['metrics'])
+                        metrics.update(actor_output_metrics)
+                        print("ENDING ACTOR TRAINING")
+
+                    if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and self.global_steps % self.config.trainer.test_freq == 0:
+                        with _timer('testing', timing_raw):
+                            val_metrics: dict = self._validate()
+                        metrics.update(val_metrics)
+
+                    if self.config.trainer.save_freq > 0 and \
+                            self.global_steps % self.config.trainer.save_freq == 0:
+                        with _timer('save_checkpoint', timing_raw):
+                            self._save_checkpoint()
+
+                metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
+                metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
+
                 print("LOGGING")
                 print(metrics)
                 wandb.log(data=metrics, step=self.global_steps)
-
-                # After dynamic GRPO
-                if self.use_critic:
-                    with _timer('update_critic', timing_raw):
-                        critic_output = self.critic_wg.update_critic(batch)
-                    critic_output_metrics = reduce_metrics(critic_output.meta_info['metrics'])
-                    metrics.update(critic_output_metrics)
-
-                if self.config.trainer.critic_warmup <= self.global_steps:
-                    print("STARTING ACTOR TRAINING")
-                    with _timer('update_actor', timing_raw):
-                        actor_output = self.actor_rollout_wg.update_actor(batch)
-                    actor_output_metrics = reduce_metrics(actor_output.meta_info['metrics'])
-                    metrics.update(actor_output_metrics)
-                    print("ENDING ACTOR TRAINING")
-
-                if self.val_reward_fn is not None and self.config.trainer.test_freq > 0 and self.global_steps % self.config.trainer.test_freq == 0:
-                    with _timer('testing', timing_raw):
-                        val_metrics: dict = self._validate()
-                    metrics.update(val_metrics)
-
-                if self.config.trainer.save_freq > 0 and \
-                        self.global_steps % self.config.trainer.save_freq == 0:
-                    with _timer('save_checkpoint', timing_raw):
-                        self._save_checkpoint()
 
                 self.global_steps += 1
 

@@ -42,8 +42,7 @@ def validate_equation(equation, ground_truth):
     return True
 
 def compute_score(solution_str, ground_truth, format_score=0.1, score=1.0):
-    do_print = random.randint(0, 800) == 0
-    do_print = False
+    do_print = random.randint(0, 64) == 0
 
     if do_print:
         print("--------------------------------")

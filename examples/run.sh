@@ -19,7 +19,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.ppo_mini_batch_size=32 \
     actor_rollout_ref.actor.ppo_micro_batch_size=32 \
     actor_rollout_ref.rollout.n=1 \
-    +actor_rollout_ref.rollout.max_n=1 \
+    +actor_rollout_ref.rollout.max_n=3 \
     +actor_rollout_ref.rollout.additional_n=1 \
     +actor_rollout_ref.rollout.desired_adv_std=0.2 \
     actor_rollout_ref.ref.log_prob_micro_batch_size=16 \
@@ -41,10 +41,10 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.logger=['wandb'] \
     trainer.project_name='std' \
-    trainer.experiment_name='test2' \
+    trainer.experiment_name='test5' \
     trainer.nnodes=1 \
     trainer.n_gpus_per_node=2 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     trainer.save_freq=-1 \
-    trainer.test_freq=5 \
+    trainer.test_freq=50 \
     trainer.total_epochs=10 $@
